@@ -38,8 +38,8 @@ def scrape_chosic_similar(artist, track):
 
 def scrape_chosic_playlist_analyzer(playlist_id):
     """
-    Scrapea análisis de playlist desde Chosic
-    Retorna metadata de género, mood, etc
+    Scrapea analisis de playlist desde Chosic
+    Retorna metadata de genero, mood, etc
     """
     try:
         url = f"https://www.chosic.com/spotify/playlist-analyzer/?id={playlist_id}"
