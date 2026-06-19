@@ -1,50 +1,71 @@
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 from db import get_conn
+from scraper import get_recommendations_from_chosic
+from spotify import search_track
 
-def get_user_profile():
-    conn = get_conn()
-    c = conn.cursor()
+def get_chosic_recommendations(artist, track, limit=10):
+    """
+    Obtiene recomendaciones desde Chosic scrapeado
+    Busca en Spotify y guarda localmente
+    """
+    try:
+        # Scrapea Chosic
+        chosic_results = get_recommendations_from_chosic(artist, track)
+        
+        if not chosic_results:
+            return []
+        
+        recommendations = []
+        conn = get_conn()
+        c = conn.cursor()
+        
+        for title, rec_artist in chosic_results[:limit]:
+            try:
+                # Busca en Spotify
+                tracks = search_track(f"{rec_artist} {title}")
+                
+                if tracks:
+                    track_data = tracks[0]
+                    spotify_id = track_data['id']
+                    
+                    # Guarda en DB si no existe
+                    c.execute('''
+                        INSERT OR IGNORE INTO songs
+                        (spotify_id, title, artist, album, url)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (
+                        spotify_id,
+                        track_data['name'],
+                        track_data['artists'][0]['name'],
+                        track_data.get('album', {}).get('name'),
+                        track_data['external_urls']['spotify']
+                    ))
+                    
+                    recommendations.append({
+                        'title': track_data['name'],
+                        'artist': track_data['artists'][0]['name'],
+                        'spotify_id': spotify_id,
+                        'url': track_data['external_urls']['spotify'],
+                        'album': track_data.get('album', {}).get('name')
+                    })
+            except Exception as e:
+                print(f"Error procesando recomendacion: {e}")
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        return recommendations
     
-    c.execute('''
-        SELECT s.bpm, s.energy, s.danceability, s.loudness
-        FROM songs s
-        JOIN ratings r ON s.id = r.song_id
-        WHERE r.rating >= 4
-    ''')
-    
-    rows = c.fetchall()
-    conn.close()
-    
-    if not rows:
-        return None
-    
-    features = np.array([list(row) for row in rows])
-    return np.mean(features, axis=0)
+    except Exception as e:
+        print(f"Error en get_chosic_recommendations: {e}")
+        return []
 
-def recommend(limit=10):
-    profile = get_user_profile()
-    if profile is None:
+def recommend(artist=None, track=None, limit=10):
+    """
+    API principal de recomendaciones
+    Ahora usa Chosic como fuente
+    """
+    if not artist or not track:
         return []
     
-    conn = get_conn()
-    c = conn.cursor()
-    
-    # Songs con rating
-    c.execute('SELECT id FROM ratings')
-    rated_ids = set(row[0] for row in c.fetchall())
-    
-    # Todos los songs
-    c.execute('SELECT id, bpm, energy, danceability, loudness FROM songs')
-    all_songs = c.fetchall()
-    conn.close()
-    
-    candidates = []
-    for song_id, bpm, energy, danceability, loudness in all_songs:
-        if song_id not in rated_ids:
-            feat = np.array([[bpm or 0, energy or 0, danceability or 0, loudness or 0]])
-            sim = cosine_similarity([profile], feat)[0][0]
-            candidates.append((song_id, sim))
-    
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    return [song_id for song_id, _ in candidates[:limit]]
+    return get_chosic_recommendations(artist, track, limit)

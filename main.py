@@ -60,31 +60,18 @@ def save_song(spotify_id: str, title: str, artist: str, rating: int = 5):
         return {"error": str(e)}, 500
 
 @app.get("/recommendations")
-def get_recommendations(limit: int = 10):
+def get_recommendations(artist: str, track: str, limit: int = 10):
+    """
+    Obtiene recomendaciones desde Chosic
+    Parametros: artist, track
+    """
     try:
-        ids = recommend(limit)
+        recs = recommend(artist, track, limit)
         
-        if not ids:
-            return {"recommendations": []}
+        if not recs:
+            return {"recommendations": [], "source": "chosic"}
         
-        conn = get_conn()
-        c = conn.cursor()
-        
-        placeholders = ','.join('?' * len(ids))
-        c.execute(f'SELECT id, title, artist, album, spotify_id FROM songs WHERE id IN ({placeholders})', ids)
-        
-        results = []
-        for row in c.fetchall():
-            results.append({
-                "id": row[0],
-                "title": row[1],
-                "artist": row[2],
-                "album": row[3],
-                "spotify_id": row[4]
-            })
-        
-        conn.close()
-        return {"recommendations": results}
+        return {"recommendations": recs, "source": "chosic", "count": len(recs)}
     except Exception as e:
         return {"error": str(e)}, 500
 
